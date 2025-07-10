@@ -9,4 +9,4 @@ Chrome controller for Termux, Pydroid, or Linux using Selenium.
 
 ## Installation
 ```bash
-pip install antiweb
+pip install antiwebx
