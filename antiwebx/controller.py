@@ -1,23 +1,25 @@
+# antiwebx/controller.py
+
 import os
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from .installer import install_chromium
 
-def setup_driver():
+def get_chrome_paths():
     base = os.path.dirname(os.path.abspath(__file__))
-    chrome_path = os.path.join(base, "chrome-linux", "chrome")
-    driver_path = os.path.join(base, "chromedriver-linux", "chromedriver")
+    chrome_path = os.path.join(base, "chrome", "chrome")
+    driver_path = os.path.join(base, "chromedriver", "chromedriver")
+    return chrome_path, driver_path
 
-    if not os.path.exists(chrome_path) or not os.path.exists(driver_path):
-        install_chromium()
+def launch_browser(headless=True):
+    chrome_path, driver_path = get_chrome_paths()
 
     options = Options()
-    options.binary_location = chrome_path
-    options.add_argument("--headless")
+    if headless:
+        options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.binary_location = chrome_path
 
-    service = Service(driver_path)
-    driver = webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(executable_path=driver_path, options=options)
     return driver
