@@ -1,159 +1,101 @@
-"""
-antiwebx.installer
-------------------
-Download & unpack Chromium + ChromeDriver with
-platform-aware fallback URLs and automatic retries.
-"""
+import os
+import urllib.request
+import zipfile
+import platform
+import shutil
 
-from __future__ import annotations
-import os, platform, zipfile, urllib.request, urllib.error, shutil, sys, time
-
-# ────────────────────────────────────────────────────────────────────────────
-# CONFIG – add or change links here ↓↓↓
-# ────────────────────────────────────────────────────────────────────────────
-
-DOWNLOAD_MATRIX = {
-    # Linux x86-64 (typical VPS / desktop)
-    "linux_x64": {
-        "chromium": [
-            # Official Chrome for-testing
-            "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.57/linux64/chrome-linux64.zip",
-            # RobRich nightly builds
-            "https://github.com/RobRich999/Chromium_Clang/releases/download/124.0.6367.118-r1230297/chrome-linux.zip",
-        ],
-        "driver": [
-            "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.57/linux64/chromedriver-linux64.zip",
-            "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_linux64.zip",
-        ],
-    },
-
-    # Termux / Android ARM64
-    "linux_arm64": {
-        "chromium": [
-            # Chromium build maintained for aarch64
-            "https://github.com/ekles/ungoogled-chromium-arm64/releases/download/124.0.6367.207-1/chromium-browser-124.0.6367.207-1-aarch64.zip",
-        ],
-        "driver": [
-            # The driver is still x86-64; Selenium can run remote-debugging without driver,
-            # but we provide one so scripts that require it don't break.
-            "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_linux64.zip",
-        ],
-    },
-
-    # Windows x86-64
-    "windows_x64": {
-        "chromium": [
-            "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.57/win64/chrome-win64.zip",
-        ],
-        "driver": [
-            "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.57/win64/chromedriver-win64.zip",
-        ],
-    },
-}
-
-# Where to unpack relative to this file
-CHROME_DIR   = "chrome"
-DRIVER_DIR   = "chromedriver"
-
-# ────────────────────────────────────────────────────────────────────────────
-# Helper functions
-# ────────────────────────────────────────────────────────────────────────────
-
-def _download(url: str, dest: str) -> bool:
-    """Try to download *url* to *dest*. Return True on success, False on 404/403."""
+def download_and_extract(url, extract_to, binary_name):
     try:
-        with urllib.request.urlopen(url, timeout=60) as r, open(dest, "wb") as f:
-            shutil.copyfileobj(r, f)
+        file_zip = os.path.join(extract_to, "temp.zip")
+        urllib.request.urlretrieve(url, file_zip)
+        with zipfile.ZipFile(file_zip, 'r') as zip_ref:
+            zip_ref.extractall(extract_to)
+        os.remove(file_zip)
+        bin_path = find_binary(extract_to, binary_name)
+        if bin_path:
+            os.chmod(bin_path, 0o755)
         return True
-    except urllib.error.HTTPError as e:
-        if e.code in (403, 404):
-            print(f"  ↳ {e.code} on {url.split('/')[-1]} – trying next mirror…")
-            return False
-        raise  # network error, let it propagate
     except Exception as e:
-        print(f"  ↳ error: {e}")
+        print(f"  ↳ Error downloading from: {url} → {e}")
         return False
 
+def find_binary(folder, binary_name):
+    for root, dirs, files in os.walk(folder):
+        if binary_name in files:
+            return os.path.join(root, binary_name)
+    return None
 
-def _unzip(zip_path: str, out_dir: str) -> None:
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(out_dir)
-    os.remove(zip_path)
+def install_chromium():
+    print("[*] Detecting platform and architecture...")
+    system = platform.system().lower()
+    arch = platform.machine().lower()
 
+    if 'aarch64' in arch or 'arm64' in arch:
+        arch_tag = 'linux_arm64'
+    elif 'arm' in arch:
+        arch_tag = 'linux_arm'
+    elif 'x86_64' in arch or 'amd64' in arch:
+        arch_tag = 'linux_x64'
+    elif 'win' in system:
+        arch_tag = 'win_x64'
+    elif 'darwin' in system and 'arm' in arch:
+        arch_tag = 'mac_arm64'
+    elif 'darwin' in system:
+        arch_tag = 'mac_x64'
+    else:
+        raise RuntimeError(f"❌ Unsupported platform: {system}/{arch}")
 
-def _ensure_exec(bin_path: str) -> None:
-    if os.path.exists(bin_path):
-        os.chmod(bin_path, os.stat(bin_path).st_mode | 0o755)
+    print(f"[*] Detected platform {system}/{arch} → using '{arch_tag}' build list")
 
-# ────────────────────────────────────────────────────────────────────────────
-# Public API
-# ────────────────────────────────────────────────────────────────────────────
+    chrome_links = {
+        'linux_x64': [
+            "https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/1132442/chrome-linux.zip",
+            "https://github.com/RobRich999/Chromium_Clang/releases/download/124.0.6367.118-r1230297/chrome-linux.zip"
+        ],
+        'linux_arm64': [
+            "https://github.com/ekg/arm-chromium-build/releases/download/v124/chromium-browser-124.0.6367.207-1-aarch64.zip"
+        ],
+        'win_x64': [
+            "https://github.com/macchrome/winchrome/releases/download/v124.0.6367.118-r1230297/Chrome-bin.zip"
+        ],
+        'mac_x64': [
+            "https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/124.0.6367.118-1/ungoogled-chromium_124.0.6367.118-1.mac_x64.zip"
+        ],
+        'mac_arm64': [
+            "https://github.com/ungoogled-software/ungoogled-chromium-macos/releases/download/124.0.6367.118-1/ungoogled-chromium_124.0.6367.118-1.mac_arm64.zip"
+        ]
+    }
 
-def install_chromium(force: bool = False) -> None:
-    """
-    Download + extract Chromium & ChromeDriver if not already present.
-    • *force*=True will re-download even if folders exist.
-    """
+    driver_links = {
+        'linux_x64': "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_linux64.zip",
+        'linux_arm64': "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_linux64.zip",
+        'win_x64': "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_win32.zip",
+        'mac_x64': "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_mac64.zip",
+        'mac_arm64': "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_mac64_m1.zip"
+    }
 
     base = os.path.dirname(os.path.abspath(__file__))
-    chrome_home  = os.path.join(base, CHROME_DIR)
-    driver_home  = os.path.join(base, DRIVER_DIR)
+    chrome_dir = os.path.join(base, "chrome")
+    driver_dir = os.path.join(base, "chromedriver")
 
-    if not force and os.path.isdir(chrome_home) and os.path.isdir(driver_home):
-        print("[✓] Chromium already installed.")
-        return
+    os.makedirs(chrome_dir, exist_ok=True)
+    os.makedirs(driver_dir, exist_ok=True)
 
-    # Clean old dirs if forcing
-    if force and os.path.isdir(chrome_home):
-        shutil.rmtree(chrome_home, ignore_errors=True)
-    if force and os.path.isdir(driver_home):
-        shutil.rmtree(driver_home, ignore_errors=True)
-
-    # Detect platform key
-    plat = platform.system().lower()
-    arch = platform.machine().lower()
-    key  = {
-        ("linux", "x86_64"): "linux_x64",
-        ("linux", "aarch64"): "linux_arm64",
-        ("linux", "arm64"):   "linux_arm64",
-        ("windows", "amd64"): "windows_x64",
-    }.get((plat, arch))
-
-    if not key or key not in DOWNLOAD_MATRIX:
-        raise RuntimeError(f"Unsupported platform: {plat}/{arch}")
-
-    print(f"[*] Detected platform {plat}/{arch} → using '{key}' build list")
-    urls = DOWNLOAD_MATRIX[key]
-
-    # Download loop with fallbacks
-    chrome_zip = os.path.join(base, "chrome.zip")
-    driver_zip = os.path.join(base, "driver.zip")
-
-    for link in urls["chromium"]:
-        if _download(link, chrome_zip):
+    chrome_success = False
+    print("[*] Downloading Chromium...")
+    for url in chrome_links.get(arch_tag, []):
+        print(f"  ↳ Trying: {url}")
+        if download_and_extract(url, chrome_dir, "chrome" if 'linux' in arch_tag else "chrome.exe"):
+            chrome_success = True
             break
-    else:
+        else:
+            print("    → failed, trying next...")
+    if not chrome_success:
         raise RuntimeError("❌ All Chromium mirrors failed.")
 
-    for link in urls["driver"]:
-        if _download(link, driver_zip):
-            break
-    else:
-        print("⚠️  All ChromeDriver mirrors failed. Proceeding without driver.")
-
-    # Unpack
-    _unzip(chrome_zip, chrome_home)
-    if os.path.exists(driver_zip):
-        _unzip(driver_zip, driver_home)
-
-    # make executable
-    _ensure_exec(os.path.join(chrome_home, "chrome"))
-    _ensure_exec(os.path.join(driver_home, "chromedriver"))
+    print("[*] Downloading ChromeDriver...")
+    driver_url = driver_links.get(arch_tag)
+    if not driver_url or not download_and_extract(driver_url, driver_dir, "chromedriver" if 'linux' in arch_tag else "chromedriver.exe"):
+        raise RuntimeError("❌ ChromeDriver download failed.")
 
     print("[✓] Chromium setup complete.")
-
-# Quick CLI entry-point
-if __name__ == "__main__":
-    start = time.time()
-    install_chromium(force=False)
-    print(f"Done in {time.time()-start:.1f}s")
