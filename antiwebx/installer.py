@@ -6,7 +6,9 @@ def install_chromium():
     print("[*] Downloading Chromium and ChromeDriver...")
 
     base = os.path.dirname(os.path.abspath(__file__))
-    chrome_url = "https://github.com/RobRich999/Chromium_Clang/releases/download/124.0.6367.118-r1230297/chrome-linux.zip"
+
+    # ✅ Replace with a working Chromium build for Termux/ARM64
+    chrome_url = "https://github.com/puppeteer/puppeteer/releases/download/v21.3.8/chromium-linux-arm64.zip"
     driver_url = "https://chromedriver.storage.googleapis.com/124.0.6367.118/chromedriver_linux64.zip"
 
     chrome_zip = os.path.join(base, "chrome.zip")
